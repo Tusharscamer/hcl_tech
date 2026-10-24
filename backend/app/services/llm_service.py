@@ -88,7 +88,7 @@ class LLMService:
             facts.append(f"Loan Eligibility: Pre-Approved: {el.get('eligible')}, Max Amount: ₹{el.get('max_eligible_amount')}, Rate: {el.get('interest_rate')}% p.a.")
 
         if rag_context:
-            facts.append(f"Bank Policy Clauses: {rag_context[:300]}")
+            facts.append(f"Bank Policy Clauses:\n{rag_context[:2500]}")
 
         verified_data_block = "\n".join(facts)
 

@@ -1,5 +1,6 @@
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from langgraph.graph import StateGraph, START, END
 from .state import AgentState
 from .nodes.intent import intent_node
 from .nodes.planner import planner_node
@@ -12,23 +13,46 @@ from ..utils.logger import logger
 
 class BankingAgentGraph:
     """
-    LangGraph-style State Graph Orchestrator for Daily Banking Assistant.
-    Follows Intent -> Planning -> Tool Execution -> Approval/Oversight -> Response Generation.
+    Official LangGraph Orchestrator for Daily Banking Assistant.
+    Follows: START -> intent -> planner -> tool_executor -> approval -> response -> END
     """
     def __init__(self):
-        self.nodes = [
-            ("intent", intent_node),
-            ("planner", planner_node),
-            ("tool_executor", tool_executor_node),
-            ("approval", approval_node),
-            ("response", response_node)
-        ]
+        logger.info("[LangGraph] Building LangGraph StateGraph orchestrator...")
+        self.workflow = StateGraph(AgentState)
 
-    def run(self, user_query: str, customer_id: str, session_id: str = "default", chat_history: Any = None) -> AgentState:
+        # Add Core Orchestration Nodes
+        self.workflow.add_node("intent", intent_node)
+        self.workflow.add_node("planner", planner_node)
+        self.workflow.add_node("tool_executor", tool_executor_node)
+        self.workflow.add_node("approval", approval_node)
+        self.workflow.add_node("response", response_node)
+
+        # Connect Graph Edges
+        self.workflow.add_edge(START, "intent")
+        self.workflow.add_edge("intent", "planner")
+        self.workflow.add_edge("planner", "tool_executor")
+        self.workflow.add_edge("tool_executor", "approval")
+        self.workflow.add_edge("approval", "response")
+        self.workflow.add_edge("response", END)
+
+        # Compile the LangGraph Application
+        self.graph = self.workflow.compile()
+        logger.info("[LangGraph] Successfully compiled official LangGraph StateGraph pipeline.")
+
+    def run(
+        self,
+        user_query: str,
+        customer_id: str,
+        session_id: str = "default",
+        chat_history: Optional[Any] = None
+    ) -> AgentState:
+        """
+        Executes user query through compiled LangGraph state machine.
+        """
         start_time = time.time()
         trace_id = generate_trace_id("BANK")
 
-        state = AgentState(
+        initial_state = AgentState(
             trace_id=trace_id,
             customer_id=customer_id,
             session_id=session_id,
@@ -36,35 +60,43 @@ class BankingAgentGraph:
             chat_history=chat_history or []
         )
 
-        logger.info(f"[Graph] Starting execution pipeline for Trace: {trace_id} | Customer: {customer_id}")
+        logger.info(f"[LangGraph] Invoking StateGraph for Trace: {trace_id} | Customer: {customer_id}")
 
-        for node_name, node_func in self.nodes:
-            try:
-                state = node_func(state)
-            except Exception as e:
-                logger.error(f"[Graph] Error in node {node_name}: {e}")
-                state.error = str(e)
-                state.status = "FAILED"
-                break
+        try:
+            raw_output = self.graph.invoke(initial_state)
+
+            if isinstance(raw_output, dict):
+                final_state = AgentState(**raw_output)
+            elif isinstance(raw_output, AgentState):
+                final_state = raw_output
+            else:
+                final_state = initial_state
+                final_state.error = f"Unexpected output type from LangGraph: {type(raw_output)}"
+        except Exception as e:
+            logger.error(f"[LangGraph] Pipeline execution failed: {e}")
+            final_state = initial_state
+            final_state.error = str(e)
+            final_state.status = "FAILED"
 
         latency_ms = (time.time() - start_time) * 1000.0
-        state.latency_ms = latency_ms
+        final_state.latency_ms = latency_ms
 
         # Audit and Observability Layer Logging (Requirement R8)
         audit_service.log_interaction(
-            trace_id=state.trace_id,
-            customer_id=state.customer_id,
-            user_query=state.user_query,
-            tools_invoked=state.tools_invoked,
-            systems_queried=state.systems_queried,
-            intent=state.intent or "UNKNOWN",
-            decision_reasoning=f"Planned {len(state.tools_to_invoke)} tools across systems: {', '.join(state.systems_queried)}",
-            action_outcome=state.answer_type,
+            trace_id=final_state.trace_id,
+            customer_id=final_state.customer_id,
+            user_query=final_state.user_query,
+            tools_invoked=final_state.tools_invoked,
+            systems_queried=final_state.systems_queried,
+            intent=final_state.intent or "UNKNOWN",
+            decision_reasoning=f"LangGraph planned {len(final_state.tools_to_invoke)} tools across systems: {', '.join(final_state.systems_queried)}",
+            action_outcome=final_state.answer_type,
             latency_ms=latency_ms,
-            status=state.status,
-            error_message=state.error
+            status=final_state.status,
+            error_message=final_state.error
         )
 
-        return state
+        return final_state
 
+# Global compiled orchestrator instance
 agent_graph = BankingAgentGraph()

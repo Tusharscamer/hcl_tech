@@ -3,7 +3,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from ..utils.logger import logger
 
-def get_text_splitter(chunk_size: int = 600, chunk_overlap: int = 100) -> RecursiveCharacterTextSplitter:
+def get_text_splitter(chunk_size: int = 1200, chunk_overlap: int = 150) -> RecursiveCharacterTextSplitter:
     """
     Returns an optimized LangChain RecursiveCharacterTextSplitter for banking policy text.
     """
@@ -16,8 +16,8 @@ def get_text_splitter(chunk_size: int = 600, chunk_overlap: int = 100) -> Recurs
 
 def split_text_into_chunks(
     documents: List[Union[Document, Dict[str, Any]]],
-    chunk_size: int = 600,
-    chunk_overlap: int = 100
+    chunk_size: int = 1200,
+    chunk_overlap: int = 150
 ) -> List[Document]:
     """
     LangChain Pipeline: Splits documents into semantically coherent chunks using

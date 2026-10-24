@@ -1,5 +1,6 @@
 import re
 import math
+import time
 import json
 import urllib.request
 from typing import List, Dict, Any
@@ -9,9 +10,9 @@ from ..utils.logger import logger
 
 class GeminiLangChainEmbeddings(Embeddings):
     """
-    LangChain Embeddings implementation powered by Google Gemini
-    (models/gemini-embedding-001).
-    Produces 3072-dimensional semantic vectors compliant with LangChain VectorStore pipelines.
+    LangChain Embeddings implementation powered by Google Gemini (models/gemini-embedding-001).
+    Produces consistent 3072-dimensional semantic vectors compliant with ChromaDB & LangChain.
+    Includes automatic rate-limit backoff and guaranteed dimensional consistency.
     """
     def __init__(self, model_name: str = "gemini-embedding-001"):
         self.model_name = model_name
@@ -21,7 +22,7 @@ class GeminiLangChainEmbeddings(Embeddings):
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
-        LangChain Interface: Embeds a list of document strings.
+        LangChain Interface: Embeds a list of document strings with rate-limiting & retries.
         """
         results: List[List[float]] = []
         if not self.api_key:
@@ -41,27 +42,48 @@ class GeminiLangChainEmbeddings(Embeddings):
             ]
 
             payload = {"requests": requests_payload}
-            try:
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json"}
-                )
-                with urllib.request.urlopen(req, timeout=12) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    raw_embeddings = data.get("embeddings", [])
-                    for idx, emb_obj in enumerate(raw_embeddings):
-                        vec = emb_obj.get("values", [])
-                        if vec:
-                            self.cache[chunk_slice[idx].strip()] = vec
-                            results.append(vec)
-                        else:
-                            results.append(self._offline_fallback_vector(chunk_slice[idx]))
-                logger.info(f"[LangChain Embeddings] Embedded batch of {len(chunk_slice)} docs with {self.model_name} (dim: {self.vector_dim}).")
-            except Exception as e:
-                logger.warning(f"[LangChain Embeddings] Batch embed error ({e}). Using offline vectorizer.")
+            batch_success = False
+
+            # Try up to 3 times with exponential backoff on 429
+            for attempt in range(3):
+                try:
+                    req = urllib.request.Request(
+                        url,
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers={"Content-Type": "application/json"}
+                    )
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        raw_embeddings = data.get("embeddings", [])
+                        for idx, emb_obj in enumerate(raw_embeddings):
+                            vec = emb_obj.get("values", [])
+                            if vec and len(vec) == self.vector_dim:
+                                self.cache[chunk_slice[idx].strip()] = vec
+                                results.append(vec)
+                            else:
+                                results.append(self._offline_fallback_vector(chunk_slice[idx]))
+                    batch_success = True
+                    logger.info(f"[LangChain Embeddings] Embedded batch {i // batch_size + 1} ({len(chunk_slice)} docs) via {self.model_name} (dim: {self.vector_dim}).")
+                    break
+                except urllib.error.HTTPError as e:
+                    if e.code == 429 and attempt < 2:
+                        wait_sec = (attempt + 1) * 2.5
+                        logger.warning(f"[LangChain Embeddings] Rate limit (429) hit. Backing off for {wait_sec}s...")
+                        time.sleep(wait_sec)
+                    else:
+                        logger.warning(f"[LangChain Embeddings] Batch embed error ({e}).")
+                        break
+                except Exception as e:
+                    logger.warning(f"[LangChain Embeddings] Request error: {e}")
+                    break
+
+            if not batch_success:
+                logger.warning(f"[LangChain Embeddings] Generating {self.vector_dim}-dim fallback vectors for batch.")
                 for t in chunk_slice:
                     results.append(self._offline_fallback_vector(t))
+
+            # Polite spacing between batches
+            time.sleep(0.4)
 
         return results
 
@@ -71,7 +93,7 @@ class GeminiLangChainEmbeddings(Embeddings):
         """
         cleaned = text.strip()
         if not cleaned:
-            return [0.0] * 128
+            return [0.0] * self.vector_dim
 
         if cleaned in self.cache:
             return self.cache[cleaned]
@@ -82,36 +104,38 @@ class GeminiLangChainEmbeddings(Embeddings):
                 "model": f"models/{self.model_name}",
                 "content": {"parts": [{"text": cleaned[:2000]}]}
             }
-            try:
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json"}
-                )
-                with urllib.request.urlopen(req, timeout=8) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    vec = data.get("embedding", {}).get("values", [])
-                    if vec:
-                        self.cache[cleaned] = vec
-                        return vec
-            except Exception as e:
-                logger.warning(f"[LangChain Embeddings] Single query embed error ({e}).")
+            for attempt in range(2):
+                try:
+                    req = urllib.request.Request(
+                        url,
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers={"Content-Type": "application/json"}
+                    )
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        vec = data.get("embedding", {}).get("values", [])
+                        if vec and len(vec) == self.vector_dim:
+                            self.cache[cleaned] = vec
+                            return vec
+                except urllib.error.HTTPError as e:
+                    if e.code == 429 and attempt == 0:
+                        time.sleep(1.5)
+                    else:
+                        break
+                except Exception:
+                    break
 
         fallback = self._offline_fallback_vector(cleaned)
         self.cache[cleaned] = fallback
         return fallback
 
-    # Backwards-compatible aliases
-    def embed_text(self, text: str) -> List[float]:
-        return self.embed_query(text)
-
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        return self.embed_documents(texts)
-
     def _offline_fallback_vector(self, text: str) -> List[float]:
+        """
+        Guarantees deterministic vector with EXACT self.vector_dim (3072) length for Chroma compatibility.
+        """
         cleaned = re.sub(r"[^\w\s]", " ", text.lower())
         tokens = [t for t in cleaned.split() if len(t) > 2]
-        dim = 128
+        dim = self.vector_dim
         vec = [0.0] * dim
         if not tokens:
             return vec
