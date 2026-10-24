@@ -1,0 +1,32 @@
+[
+  {
+    "loan_id": "LN10091",
+    "customer_id": "C1001",
+    "loan_type": "HOME_LOAN",
+    "sanctioned_amount": 2500000.00,
+    "outstanding_balance": 1845000.00,
+    "interest_rate": 8.45,
+    "tenure_months": 240,
+    "remaining_tenure_months": 164,
+    "emi_amount": 20000.00,
+    "next_emi_date": "2026-11-05",
+    "status": "ACTIVE",
+    "auto_debit_account": "ACC100123456",
+    "purpose": "Residential apartment mortgage"
+  },
+  {
+    "loan_id": "LN10092",
+    "customer_id": "C1002",
+    "loan_type": "PERSONAL_LOAN",
+    "sanctioned_amount": 300000.00,
+    "outstanding_balance": 120000.00,
+    "interest_rate": 11.50,
+    "tenure_months": 36,
+    "remaining_tenure_months": 14,
+    "emi_amount": 9850.00,
+    "next_emi_date": "2026-11-02",
+    "status": "ACTIVE",
+    "auto_debit_account": "ACC200554433",
+    "purpose": "Home renovation"
+  }
+]

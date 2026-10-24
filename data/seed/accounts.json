@@ -1,0 +1,41 @@
+[
+  {
+    "account_number": "ACC100123456",
+    "customer_id": "C1001",
+    "account_type": "SAVINGS",
+    "currency": "INR",
+    "available_balance": 125000.00,
+    "ledger_balance": 128500.00,
+    "status": "ACTIVE",
+    "branch": "MG Road, Bengaluru",
+    "ifsc_code": "APEX0001042",
+    "is_primary": true,
+    "opened_date": "2024-01-20"
+  },
+  {
+    "account_number": "ACC100987654",
+    "customer_id": "C1001",
+    "account_type": "CURRENT",
+    "currency": "INR",
+    "available_balance": 45000.00,
+    "ledger_balance": 45000.00,
+    "status": "ACTIVE",
+    "branch": "MG Road, Bengaluru",
+    "ifsc_code": "APEX0001042",
+    "is_primary": false,
+    "opened_date": "2024-03-15"
+  },
+  {
+    "account_number": "ACC200554433",
+    "customer_id": "C1002",
+    "account_type": "SAVINGS",
+    "currency": "INR",
+    "available_balance": 82400.00,
+    "ledger_balance": 82400.00,
+    "status": "ACTIVE",
+    "branch": "Connaught Place, New Delhi",
+    "ifsc_code": "APEX0002011",
+    "is_primary": true,
+    "opened_date": "2024-02-12"
+  }
+]
